@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Local release packages
+*.zip
+*.pdb
+
+# Unrelated local teaching materials
+/1.png
+/2.png
+/3.png
+
+# IDE and user-specific files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Operating system files
+Thumbs.db
+.DS_Store
