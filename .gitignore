@@ -4,6 +4,7 @@ obj/
 dist/
 
 # Local release packages
+/MathGaoReminder-win11/
 *.zip
 *.pdb
 

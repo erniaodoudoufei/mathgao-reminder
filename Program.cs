@@ -12,7 +12,7 @@ static class Program
         if (args.Contains("--smoke-test"))
         {
             using Icon appIcon = UiTheme.CreateAppIcon();
-            using MainForm mainForm = new();
+            using MainForm mainForm = new(showFloatingWindow: false);
             using CountdownWindow countdownWindow = new();
             using FullScreenReminderForm fullScreenReminderForm = new(35, 0);
             using FloatingStatusWindow floatingStatusWindow = new(appIcon, static () => { });

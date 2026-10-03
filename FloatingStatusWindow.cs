@@ -1,5 +1,7 @@
 ﻿using System.Drawing.Drawing2D;
 
+using Microsoft.Win32;
+
 namespace MathGaoReminder;
 
 internal sealed class FloatingStatusWindow : Form
@@ -8,12 +10,17 @@ internal sealed class FloatingStatusWindow : Form
     private readonly Label _timeLabel;
     private readonly Label _hintLabel;
     private readonly Action _showMainWindow;
+    private readonly Action<Point, bool>? _savePreferences;
+    private readonly ToolStripMenuItem _lockPositionItem;
     private bool _dragging;
     private Point _dragOffset;
+    private Control? _dragControl;
 
-    public FloatingStatusWindow(Icon icon, Action showMainWindow)
+    public FloatingStatusWindow(Icon icon, Action showMainWindow,
+        bool positionLocked = false, Action<Point, bool>? savePreferences = null)
     {
         _showMainWindow = showMainWindow;
+        _savePreferences = savePreferences;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -65,19 +72,77 @@ internal sealed class FloatingStatusWindow : Form
 
         ContextMenuStrip menu = new();
         menu.Items.Add("显示主窗口", null, (_, _) => _showMainWindow());
+        _lockPositionItem = new ToolStripMenuItem("锁定位置")
+        {
+            CheckOnClick = true,
+            Checked = positionLocked
+        };
+        _lockPositionItem.CheckedChanged += (_, _) =>
+        {
+            StopDragging();
+            KeepVisible();
+            SavePreferences();
+        };
+        menu.Items.Add(_lockPositionItem);
         ContextMenuStrip = menu;
 
         MouseDown += BeginDrag;
         MouseMove += ContinueDrag;
         MouseUp += EndDrag;
+        MouseCaptureChanged += DragCaptureChanged;
         DoubleClick += (_, _) => _showMainWindow();
         foreach (Control control in Controls)
         {
+            control.ContextMenuStrip = menu;
             control.MouseDown += BeginDrag;
             control.MouseMove += ContinueDrag;
             control.MouseUp += EndDrag;
+            control.MouseCaptureChanged += DragCaptureChanged;
             control.DoubleClick += (_, _) => _showMainWindow();
         }
+
+        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
+    }
+
+    public bool PositionLocked => _lockPositionItem.Checked;
+
+    public void RestorePosition(Point? savedLocation)
+    {
+        if (savedLocation is Point location)
+        {
+            Location = location;
+        }
+        else
+        {
+            PlaceNearClock();
+        }
+
+        KeepVisible();
+    }
+
+    internal static Point ConstrainPosition(Point location, Size size, Rectangle workingArea)
+    {
+        return new Point(
+            Math.Clamp(location.X, workingArea.Left, Math.Max(workingArea.Left, workingArea.Right - size.Width)),
+            Math.Clamp(location.Y, workingArea.Top, Math.Max(workingArea.Top, workingArea.Bottom - size.Height)));
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        KeepVisible();
+        SavePreferences();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
+            ContextMenuStrip?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     public void SetStatus(bool running, string remainingText)
@@ -137,7 +202,7 @@ internal sealed class FloatingStatusWindow : Form
 
     private void BeginDrag(object? sender, MouseEventArgs e)
     {
-        if (e.Button != MouseButtons.Left)
+        if (PositionLocked || e.Button != MouseButtons.Left || e.Clicks > 1)
         {
             return;
         }
@@ -146,21 +211,89 @@ internal sealed class FloatingStatusWindow : Form
         Point screenPoint = control.PointToScreen(e.Location);
         _dragOffset = new Point(screenPoint.X - Left, screenPoint.Y - Top);
         _dragging = true;
+        _dragControl = control;
+        control.Capture = true;
     }
 
     private void ContinueDrag(object? sender, MouseEventArgs e)
     {
-        if (!_dragging)
+        if (PositionLocked || !_dragging)
         {
             return;
         }
 
-        Point cursor = Cursor.Position;
+        Control control = sender as Control ?? this;
+        Point cursor = control.PointToScreen(e.Location);
         Location = new Point(cursor.X - _dragOffset.X, cursor.Y - _dragOffset.Y);
     }
 
     private void EndDrag(object? sender, MouseEventArgs e)
     {
+        if (e.Button != MouseButtons.Left || !_dragging)
+        {
+            return;
+        }
+
+        StopDragging();
+        KeepVisible();
+        SavePreferences();
+    }
+
+    private void StopDragging()
+    {
         _dragging = false;
+        if (_dragControl != null)
+        {
+            _dragControl.Capture = false;
+            _dragControl = null;
+        }
+    }
+
+    private void DragCaptureChanged(object? sender, EventArgs e)
+    {
+        if (_dragging && sender is Control control && !control.Capture)
+        {
+            StopDragging();
+            KeepVisible();
+            SavePreferences();
+        }
+    }
+
+    private void KeepVisible()
+    {
+        Rectangle workingArea = Screen.FromPoint(Location).WorkingArea;
+        Location = ConstrainPosition(Location, Size, workingArea);
+    }
+
+    private void DisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke((Action)(() =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                StopDragging();
+                KeepVisible();
+                SavePreferences();
+            }));
+        }
+        catch (InvalidOperationException) when (IsDisposed || Disposing || !IsHandleCreated)
+        {
+            // The window may close while a display-change notification is being dispatched.
+        }
+    }
+
+    private void SavePreferences()
+    {
+        _savePreferences?.Invoke(Location, PositionLocked);
     }
 }

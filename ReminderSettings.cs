@@ -14,6 +14,12 @@ public sealed class ReminderSettings
 
     public bool ShowFloatingWindow { get; set; }
 
+    public bool FloatingWindowPositionLocked { get; set; }
+
+    public int? FloatingWindowX { get; set; }
+
+    public int? FloatingWindowY { get; set; }
+
     public bool HideToTrayOnClose { get; set; } = true;
 
     private static readonly JsonSerializerOptions JsonOptions = new()

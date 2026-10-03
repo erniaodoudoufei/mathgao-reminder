@@ -31,7 +31,7 @@ public sealed class MainForm : Form
     private bool _allowExit;
     private int _currentCycleMinutes;
 
-    public MainForm()
+    public MainForm(bool showFloatingWindow = true)
     {
         _settings = ReminderSettings.Load();
         _currentCycleMinutes = Math.Max(1, _settings.WorkIntervalMinutes);
@@ -84,7 +84,10 @@ public sealed class MainForm : Form
 
         UpdateDisplay(TimeSpan.FromMinutes(_settings.WorkIntervalMinutes));
         UpdateActions();
-        UpdateFloatingWindowVisibility();
+        if (showFloatingWindow)
+        {
+            UpdateFloatingWindowVisibility();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -569,13 +572,25 @@ public sealed class MainForm : Form
 
         if (_floatingWindow == null || _floatingWindow.IsDisposed)
         {
-            _floatingWindow = new FloatingStatusWindow(_appIcon, ShowMainWindow);
+            _floatingWindow = new FloatingStatusWindow(_appIcon, ShowMainWindow,
+                _settings.FloatingWindowPositionLocked, SaveFloatingWindowPreferences);
             _floatingWindow.FormClosed += (_, _) => _floatingWindow = null;
-            _floatingWindow.PlaceNearClock();
+            Point? savedLocation = _settings.FloatingWindowX is int x && _settings.FloatingWindowY is int y
+                ? new Point(x, y)
+                : null;
+            _floatingWindow.RestorePosition(savedLocation);
             _floatingWindow.Show();
         }
 
         UpdateFloatingWindowStatus();
+    }
+
+    private void SaveFloatingWindowPreferences(Point location, bool positionLocked)
+    {
+        _settings.FloatingWindowX = location.X;
+        _settings.FloatingWindowY = location.Y;
+        _settings.FloatingWindowPositionLocked = positionLocked;
+        _settings.Save();
     }
 
     private void UpdateFloatingWindowStatus()
